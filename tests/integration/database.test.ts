@@ -36,6 +36,8 @@ describe("database initialization", () => {
       "tags",
       "asset_tags",
       "asset_tag_rejections",
+      "video_scene_batches",
+      "video_scene_batch_jobs",
       "__drizzle_migrations",
     ]) {
       expect(tableNames).toContain(tableName);
@@ -47,7 +49,7 @@ describe("database initialization", () => {
           "SELECT count(*) AS count FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ count: 1 });
+    ).toEqual({ count: 2 });
     void db;
     sqlite.close();
     fs.rmSync(directory, { recursive: true, force: true });
@@ -87,7 +89,7 @@ describe("database initialization", () => {
       adopted.sqlite
         .prepare("SELECT count(*) AS count FROM __drizzle_migrations")
         .get(),
-    ).toEqual({ count: 1 });
+    ).toEqual({ count: 2 });
     adopted.sqlite.close();
     fs.rmSync(directory, { recursive: true, force: true });
   });

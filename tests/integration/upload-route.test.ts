@@ -139,4 +139,26 @@ describe("streaming upload route", () => {
       processingStatus: "queued",
     });
   });
+
+  it("accepts video scene uploads through the new default endpoint", async () => {
+    const { POST } = await import("@/app/api/uploads/video-scenes/route");
+    const body = new FormData();
+    body.append(
+      "file",
+      new File([Buffer.from("video")], "source-scenes.mp4", { type: "video/mp4" }),
+    );
+    body.append("directPublish", "true");
+    const response = await POST(
+      new Request("http://localhost/api/uploads/video-scenes", {
+        method: "POST",
+        body,
+      }),
+    );
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      originalFilename: "source-scenes.mp4",
+      processingStatus: "queued",
+      childAssets: [],
+    });
+  });
 });

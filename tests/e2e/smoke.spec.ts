@@ -36,7 +36,7 @@ test("overview and upload pages expose the MVP scope", async ({ page }) => {
   ).toHaveCount(0);
   await page.getByRole("link", { name: /上传素材/ }).click();
   await expect(page.getByRole("heading", { name: "上传素材" })).toBeVisible();
-  await expect(page.getByText(/自动提取 1–5 张关键帧/)).toBeVisible();
+  await expect(page.getByText(/每个分镜再自动提取 1–5 张关键帧/)).toBeVisible();
   await expect(page.getByText(/支持一次选择多个本地素材并逐个上传/)).toBeVisible();
   await expect(page.locator('input[type="file"]')).toHaveAttribute(
     "accept",
@@ -63,6 +63,41 @@ test("overview and upload pages expose the MVP scope", async ({ page }) => {
     .getByRole("list", { name: "上传素材列表" })
     .evaluate((element) => element.scrollHeight > element.clientHeight);
   expect(listCanScroll).toBe(true);
+});
+
+test("uses the scene batch endpoint for videos", async ({ page }) => {
+  let requestedPath = "";
+  await page.route("**/api/uploads/**", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "POST") {
+      requestedPath = pathname;
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          uploadId: "00000000-0000-4000-8000-000000000001",
+          originalFilename: "scenes.mp4",
+          processingStatus: "queued",
+          progressPercent: 5,
+          sceneCount: null,
+          failureCode: null,
+          failureMessage: null,
+          childAssets: [],
+        }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 503, body: "temporarily unavailable" });
+  });
+  await page.goto("/upload");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "scenes.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from("video"),
+  });
+  await page.getByRole("button", { name: "开始上传" }).click();
+  await expect.poll(() => requestedPath).toBe("/api/uploads/video-scenes");
 });
 
 test("submits every selected asset as an independent upload", async ({
