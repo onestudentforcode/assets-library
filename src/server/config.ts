@@ -6,6 +6,8 @@ const envSchema = z.object({
   MEDIA_ROOT: z.string().default("./media"),
   MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(20 * 1024 * 1024),
   MAX_VIDEO_BYTES: z.coerce.number().int().positive().default(200 * 1024 * 1024),
+  SCENE_DETECT_BASE_URL: z.string().url().default("http://127.0.0.1:28200"),
+  SCENE_DETECT_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
   MODEL_PROTOCOL: z
     .enum(["openai_chat_completions", "openai_responses"])
     .default("openai_chat_completions"),

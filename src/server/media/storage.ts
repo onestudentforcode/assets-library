@@ -21,6 +21,34 @@ export function assetRelativePath(assetId: string, extension: string) {
   return path.join(assetId, `original${extension.toLowerCase()}`);
 }
 
+export function sceneBatchRelativePath(batchId: string) {
+  return path.join("scene-batches", batchId, "original.mp4");
+}
+
+export function moveIntoSceneBatchStorage(
+  temporaryPath: string,
+  batchId: string,
+) {
+  const relativePath = sceneBatchRelativePath(batchId);
+  const target = resolveMediaPath(relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.renameSync(temporaryPath, target);
+  return relativePath;
+}
+
+export function removeStoredFile(relativePath: string) {
+  const absolutePath = resolveMediaPath(relativePath);
+  fs.rmSync(absolutePath, { force: true });
+  const directory = path.dirname(absolutePath);
+  try {
+    fs.rmdirSync(directory);
+    const parent = path.dirname(directory);
+    if (path.basename(parent) === "scene-batches") fs.rmdirSync(parent);
+  } catch {
+    // A non-empty or concurrently removed directory needs no further cleanup.
+  }
+}
+
 export function resolveMediaPath(
   relativePath: string,
   configuredRoot = loadConfig().mediaRoot,

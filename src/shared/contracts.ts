@@ -32,6 +32,7 @@ export const failureCodeSchema = z.enum([
   "video_frames_missing",
   "model_request_failed",
   "model_response_invalid",
+  "scene_split_failed",
   "storage_error",
   "internal_error",
 ]);
@@ -108,6 +109,32 @@ export const uploadStatusSchema = z.object({
 });
 export type UploadStatus = z.infer<typeof uploadStatusSchema>;
 
+export const sceneBatchProcessingStatusSchema = z.enum([
+  "queued",
+  "splitting",
+  "validating_segments",
+  "analyzing",
+  "completed",
+  "failed",
+]);
+export type SceneBatchProcessingStatus = z.infer<
+  typeof sceneBatchProcessingStatusSchema
+>;
+
+export const videoSceneBatchStatusSchema = z.object({
+  uploadId: z.string().uuid(),
+  originalFilename: z.string().min(1),
+  processingStatus: sceneBatchProcessingStatusSchema,
+  progressPercent: z.number().int().min(0).max(100),
+  sceneCount: z.number().int().positive().nullable(),
+  failureCode: failureCodeSchema.nullable(),
+  failureMessage: z.string().nullable(),
+  childAssets: z.array(uploadStatusSchema),
+});
+export type VideoSceneBatchStatus = z.infer<
+  typeof videoSceneBatchStatusSchema
+>;
+
 export const assetEditSchema = z.object({
   name: z.string().trim().min(1).max(255),
   description: z.string().max(10_000),
@@ -131,6 +158,7 @@ export interface AssetSummary {
   reviewStatus: ReviewStatus;
   tags: AssetTag[];
   mediaUrl: string;
+  sourceOriginalFilename: string | null;
   createdAt: string;
   searchScore?: number;
   semanticScore?: number;

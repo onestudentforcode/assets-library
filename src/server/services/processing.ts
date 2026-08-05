@@ -210,7 +210,10 @@ function persistAnalysis(
       .set({
         description: asset.description || result.description,
         processingStatus: "completed",
-        reviewStatus: asset.directPublish ? "published" : "pending_review",
+        reviewStatus:
+          asset.directPublish && !asset.sourceBatchId
+            ? "published"
+            : "pending_review",
         failureCode: null,
         failureMessage: null,
         updatedAt: now,

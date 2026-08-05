@@ -15,6 +15,7 @@ const messages: Record<FailureCode, string> = {
   video_frames_missing: "视频关键帧不存在，请重新上传素材。",
   model_request_failed: "模型服务请求失败，请稍后重试。",
   model_response_invalid: "模型返回内容无法验证，请重试或更换模型。",
+  scene_split_failed: "视频分镜服务处理失败，请重新上传视频。",
   storage_error: "文件保存失败，请重试。",
   internal_error: "系统处理失败，请稍后重试。",
 };

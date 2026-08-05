@@ -9,6 +9,7 @@ import {
   processingJobs,
   tags,
   uploadRequests,
+  videoSceneBatches,
 } from "@/server/db/schema";
 import { AppError } from "@/server/errors";
 import { searchAnalysis } from "@/server/search/chroma";
@@ -145,6 +146,13 @@ function summaryFromRow(
   row: typeof assets.$inferSelect,
   tagList: AssetTag[],
 ): AssetSummary {
+  const sourceOriginalFilename = row.sourceBatchId
+    ? db
+        .select({ originalFilename: videoSceneBatches.originalFilename })
+        .from(videoSceneBatches)
+        .where(eq(videoSceneBatches.id, row.sourceBatchId))
+        .get()?.originalFilename ?? null
+    : null;
   return {
     id: row.id,
     name: row.name,
@@ -154,6 +162,7 @@ function summaryFromRow(
     reviewStatus: row.reviewStatus,
     tags: tagList,
     mediaUrl: `/api/media/${row.id}`,
+    sourceOriginalFilename,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -455,6 +464,7 @@ export function publishAsset(assetId: string) {
   if (!asset || asset.reviewStatus === "deleted") {
     throw new AppError("invalid_request", "素材不存在。", 404);
   }
+  assertSceneBatchOperationAllowed(asset.sourceBatchId);
   if (asset.processingStatus !== "completed") {
     throw new AppError("invalid_request", "素材分析完成后才能入库。", 409);
   }
@@ -470,6 +480,7 @@ export function retryAsset(assetId: string) {
   if (!asset || asset.reviewStatus === "deleted") {
     throw new AppError("invalid_request", "素材不存在。", 404);
   }
+  assertSceneBatchOperationAllowed(asset.sourceBatchId);
   if (asset.processingStatus !== "failed") {
     throw new AppError("invalid_request", "只有失败的素材可以重试。", 409);
   }
@@ -510,6 +521,7 @@ export function softDeleteAsset(assetId: string) {
   if (!asset || asset.reviewStatus === "deleted") {
     throw new AppError("invalid_request", "素材不存在。", 404);
   }
+  assertSceneBatchOperationAllowed(asset.sourceBatchId);
   const now = new Date();
   db.transaction((tx) => {
     tx.update(assets)
@@ -529,6 +541,22 @@ export function softDeleteAsset(assetId: string) {
       })
       .run();
   });
+}
+
+function assertSceneBatchOperationAllowed(sourceBatchId: string | null) {
+  if (!sourceBatchId) return;
+  const batch = db
+    .select({ processingStatus: videoSceneBatches.processingStatus })
+    .from(videoSceneBatches)
+    .where(eq(videoSceneBatches.id, sourceBatchId))
+    .get();
+  if (batch && batch.processingStatus !== "completed") {
+    throw new AppError(
+      "invalid_request",
+      "分镜批次完成前不能单独操作其中的素材。",
+      409,
+    );
+  }
 }
 
 export interface ClaimedJob {
