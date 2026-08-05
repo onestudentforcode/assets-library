@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import Database from "better-sqlite3";
 
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZGroAAAAASUVORK5CYII=",
@@ -117,6 +118,45 @@ test("uses the scene batch endpoint for videos", async ({ page }) => {
     failureMessage,
   );
   await expect(page.getByText("处理失败", { exact: true })).toBeVisible();
+});
+
+test("shows and deletes a failed scene batch from the pending overview", async ({
+  page,
+}) => {
+  const batchId = crypto.randomUUID();
+  const filename = `fixed-scene-${batchId.slice(0, 8)}.mp4`;
+  const failureMessage =
+    "切分后的分镜 1 超过 7 MiB，整个视频处理已失败，请压缩原视频后重新上传。";
+  const database = new Database("/tmp/assets-library-e2e/assets.db");
+  const now = Date.now();
+  database
+    .prepare(
+      `INSERT INTO video_scene_batches (
+        id, original_filename, original_path, size_bytes, direct_publish,
+        processing_status, scene_count, external_task_id, failure_code,
+        failure_message, created_at, updated_at, completed_at, deleted_at
+      ) VALUES (?, ?, NULL, ?, 0, 'failed', 1, NULL, 'file_too_large', ?, ?, ?, ?, NULL)`,
+    )
+    .run(batchId, filename, 11 * 1024 * 1024, failureMessage, now, now, now);
+  database.close();
+
+  await page.goto("/?view=pending");
+  const card = page.getByTestId(`failed-scene-batch-${batchId}`);
+  await expect(card).toBeVisible();
+  await expect(card.getByText("分析失败", { exact: true })).toBeVisible();
+  await expect(card.getByText(failureMessage)).toBeVisible();
+  await card.getByRole("button", { name: "删除素材" }).click();
+  await expect(card).toHaveCount(0);
+
+  const verification = new Database("/tmp/assets-library-e2e/assets.db", {
+    readonly: true,
+  });
+  expect(
+    verification
+      .prepare("SELECT deleted_at AS deletedAt FROM video_scene_batches WHERE id = ?")
+      .get(batchId),
+  ).toMatchObject({ deletedAt: expect.any(Number) });
+  verification.close();
 });
 
 test("submits every selected asset as an independent upload", async ({

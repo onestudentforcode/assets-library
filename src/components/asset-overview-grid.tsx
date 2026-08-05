@@ -11,6 +11,7 @@ import {
   Clock3,
   Eye,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
 import { MediaPreview } from "@/components/media-preview";
@@ -35,10 +36,11 @@ export function AssetOverviewGrid({
   layout: "gallery" | "list";
 }) {
   const router = useRouter();
-  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [workingId, setWorkingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const previewAssets = assets.filter((asset) => asset.entryType === "asset");
   const hasActiveJobs = assets.some((asset) =>
     ["queued", "validating", "analyzing"].includes(asset.processingStatus),
   );
@@ -59,16 +61,16 @@ export function AssetOverviewGrid({
       }
       if (event.key === "ArrowRight") {
         setPreviewIndex((index) =>
-          index === null ? null : Math.min(assets.length - 1, index + 1),
+          index === null ? null : Math.min(previewAssets.length - 1, index + 1),
         );
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [assets.length, previewIndex]);
+  }, [previewAssets.length, previewIndex]);
 
   const publish = async (assetId: string) => {
-    setPublishingId(assetId);
+    setWorkingId(assetId);
     setMessage("");
     try {
       const response = await fetch(`/api/assets/${assetId}/publish`, {
@@ -84,7 +86,30 @@ export function AssetOverviewGrid({
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "入库失败。");
     } finally {
-      setPublishingId(null);
+      setWorkingId(null);
+    }
+  };
+
+  const remove = async (asset: AssetSummary) => {
+    setWorkingId(asset.id);
+    setMessage("");
+    try {
+      const endpoint =
+        asset.entryType === "failed_scene_batch"
+          ? `/api/uploads/video-scenes/${asset.id}`
+          : `/api/assets/${asset.id}`;
+      const response = await fetch(endpoint, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = (await response.json()) as {
+          error?: { message?: string };
+        };
+        throw new Error(payload.error?.message ?? "删除素材失败。");
+      }
+      router.refresh();
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "删除素材失败。");
+    } finally {
+      setWorkingId(null);
     }
   };
 
@@ -111,39 +136,47 @@ export function AssetOverviewGrid({
       )}
       {layout === "gallery" ? (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {assets.map((asset, index) => (
+          {assets.map((asset) => (
             <GalleryCard
               key={asset.id}
               asset={asset}
               showDiagnostics={showDiagnostics}
-              publishing={publishingId === asset.id}
-              onPreview={() => setPreviewIndex(index)}
+              working={workingId === asset.id}
+              onPreview={() => {
+                const index = previewAssets.findIndex((entry) => entry.id === asset.id);
+                if (index >= 0) setPreviewIndex(index);
+              }}
               onPublish={publish}
+              onDelete={remove}
             />
           ))}
         </div>
       ) : (
         <div className="overflow-hidden rounded-[1.5rem] border border-black/[0.06] bg-white/90 shadow-sm dark:border-white/[0.10] dark:bg-[#1c1c1e]">
-          {assets.map((asset, index) => (
+          {assets.map((asset) => (
             <ListRow
               key={asset.id}
               asset={asset}
               showDiagnostics={showDiagnostics}
-              publishing={publishingId === asset.id}
-              onPreview={() => setPreviewIndex(index)}
+              working={workingId === asset.id}
+              onPreview={() => {
+                const index = previewAssets.findIndex((entry) => entry.id === asset.id);
+                if (index >= 0) setPreviewIndex(index);
+              }}
               onPublish={publish}
+              onDelete={remove}
             />
           ))}
         </div>
       )}
       {previewIndex !== null && (
         <PreviewDialog
-          asset={assets[previewIndex]!}
+          asset={previewAssets[previewIndex]!}
           current={previewIndex}
-          total={assets.length}
+          total={previewAssets.length}
           onClose={() => setPreviewIndex(null)}
           onPrevious={() => setPreviewIndex((index) => Math.max(0, (index ?? 0) - 1))}
-          onNext={() => setPreviewIndex((index) => Math.min(assets.length - 1, (index ?? 0) + 1))}
+          onNext={() => setPreviewIndex((index) => Math.min(previewAssets.length - 1, (index ?? 0) + 1))}
         />
       )}
     </div>
@@ -194,35 +227,60 @@ function Diagnostics({ asset }: { asset: AssetSummary }) {
 function GalleryCard({
   asset,
   showDiagnostics,
-  publishing,
+  working,
   onPreview,
   onPublish,
+  onDelete,
 }: {
   asset: AssetSummary;
   showDiagnostics: boolean;
-  publishing: boolean;
+  working: boolean;
   onPreview: () => void;
   onPublish: (assetId: string) => Promise<void>;
+  onDelete: (asset: AssetSummary) => Promise<void>;
 }) {
   const canPublish = asset.processingStatus === "completed" && asset.reviewStatus === "pending_review";
+  const canDelete = asset.entryType === "failed_scene_batch";
   return (
-    <Card className="group h-full overflow-hidden bg-white/90 transition-[box-shadow,transform] duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(0,0,0,0.10)] dark:bg-[#1c1c1e] dark:hover:shadow-black/40 motion-reduce:transition-none">
-      <button type="button" className="relative block w-full text-left" onClick={onPreview} aria-label={`预览 ${asset.name}`}>
+    <Card
+      data-testid={canDelete ? `failed-scene-batch-${asset.id}` : undefined}
+      className="group h-full overflow-hidden bg-white/90 transition-[box-shadow,transform] duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(0,0,0,0.10)] dark:bg-[#1c1c1e] dark:hover:shadow-black/40 motion-reduce:transition-none"
+    >
+      {asset.entryType === "asset" ? (
+        <button type="button" className="relative block w-full text-left" onClick={onPreview} aria-label={`预览 ${asset.name}`}>
         <div className="aspect-[4/3] overflow-hidden bg-[#e9e9eb]">
           <MediaPreview mediaType={asset.mediaType} src={asset.mediaUrl} name={asset.name} className="transition-transform duration-500 ease-out group-hover:scale-[1.025] motion-reduce:transition-none" />
         </div>
         <span className="absolute right-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-md">
           {asset.mediaType === "image" ? "图片" : "视频"}
         </span>
-      </button>
+        </button>
+      ) : (
+        <div className="relative grid aspect-[4/3] place-items-center bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300">
+          <div className="text-center">
+            <AlertCircle className="mx-auto size-10" />
+            <p className="mt-2 text-sm font-medium">视频分镜处理失败</p>
+          </div>
+          <span className="absolute right-3 top-3 rounded-full bg-red-700/85 px-2.5 py-1 text-xs font-medium text-white">
+            失败
+          </span>
+        </div>
+      )}
       <CardContent className="space-y-3 p-4 pt-4">
         <div className="flex items-center justify-between gap-3">
-          <Link href={`/assets/${asset.id}`} className="truncate font-semibold tracking-tight hover:text-[#0071e3]">
-            {asset.name}
-          </Link>
-          <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{asset.reviewStatus === "published" ? "已入库" : "待审核"}</span>
+          {asset.entryType === "asset" ? (
+            <Link href={`/assets/${asset.id}`} className="truncate font-semibold tracking-tight hover:text-[#0071e3]">
+              {asset.name}
+            </Link>
+          ) : (
+            <span className="truncate font-semibold tracking-tight">{asset.name}</span>
+          )}
+          <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{canDelete ? "不可入库" : asset.reviewStatus === "published" ? "已入库" : "待审核"}</span>
         </div>
         <AssetStatus asset={asset} />
+        {canDelete && asset.failureMessage && (
+          <p className="text-sm text-red-700 dark:text-red-300">{asset.failureMessage}</p>
+        )}
         {asset.sourceOriginalFilename && (
           <p className="truncate text-xs text-slate-500 dark:text-slate-400">
             来源：{asset.sourceOriginalFilename}
@@ -231,12 +289,19 @@ function GalleryCard({
         <AssetTags asset={asset} />
         {showDiagnostics && <Diagnostics asset={asset} />}
       </CardContent>
-      {canPublish && (
+      {(canPublish || canDelete) && (
         <CardContent className="pt-0">
-          <Button className="w-full" size="sm" disabled={publishing} onClick={() => void onPublish(asset.id)}>
-            <Send className="size-3.5" />
-            {publishing ? "正在入库…" : "确认入库"}
-          </Button>
+          {canDelete ? (
+            <Button variant="destructive" className="w-full" size="sm" disabled={working} onClick={() => void onDelete(asset)}>
+              <Trash2 className="size-3.5" />
+              {working ? "正在删除…" : "删除素材"}
+            </Button>
+          ) : (
+            <Button className="w-full" size="sm" disabled={working} onClick={() => void onPublish(asset.id)}>
+              <Send className="size-3.5" />
+              {working ? "正在入库…" : "确认入库"}
+            </Button>
+          )}
         </CardContent>
       )}
     </Card>
@@ -246,30 +311,46 @@ function GalleryCard({
 function ListRow({
   asset,
   showDiagnostics,
-  publishing,
+  working,
   onPreview,
   onPublish,
+  onDelete,
 }: {
   asset: AssetSummary;
   showDiagnostics: boolean;
-  publishing: boolean;
+  working: boolean;
   onPreview: () => void;
   onPublish: (assetId: string) => Promise<void>;
+  onDelete: (asset: AssetSummary) => Promise<void>;
 }) {
   const canPublish = asset.processingStatus === "completed" && asset.reviewStatus === "pending_review";
+  const canDelete = asset.entryType === "failed_scene_batch";
   return (
-    <article className="flex gap-4 border-b border-black/[0.06] p-3 last:border-0 dark:border-white/[0.10] sm:items-center sm:p-4">
-      <button type="button" className="relative size-20 shrink-0 overflow-hidden rounded-xl bg-[#e9e9eb] sm:size-24" onClick={onPreview} aria-label={`预览 ${asset.name}`}>
-        <MediaPreview mediaType={asset.mediaType} src={asset.mediaUrl} name={asset.name} />
-      </button>
+    <article
+      data-testid={canDelete ? `failed-scene-batch-${asset.id}` : undefined}
+      className="flex gap-4 border-b border-black/[0.06] p-3 last:border-0 dark:border-white/[0.10] sm:items-center sm:p-4"
+    >
+      {asset.entryType === "asset" ? (
+        <button type="button" className="relative size-20 shrink-0 overflow-hidden rounded-xl bg-[#e9e9eb] sm:size-24" onClick={onPreview} aria-label={`预览 ${asset.name}`}>
+          <MediaPreview mediaType={asset.mediaType} src={asset.mediaUrl} name={asset.name} />
+        </button>
+      ) : (
+        <div className="grid size-20 shrink-0 place-items-center rounded-xl bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300 sm:size-24">
+          <AlertCircle className="size-8" />
+        </div>
+      )}
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex items-center gap-3">
-          <Link href={`/assets/${asset.id}`} className="truncate font-semibold tracking-tight hover:text-[#0071e3]">
-            {asset.name}
-          </Link>
+          {asset.entryType === "asset" ? (
+            <Link href={`/assets/${asset.id}`} className="truncate font-semibold tracking-tight hover:text-[#0071e3]">
+              {asset.name}
+            </Link>
+          ) : (
+            <span className="truncate font-semibold tracking-tight">{asset.name}</span>
+          )}
           <span className="hidden shrink-0 text-xs text-slate-400 dark:text-slate-500 sm:inline">{asset.mediaType === "image" ? "图片" : "视频"}</span>
         </div>
-        <p className="line-clamp-1 text-sm text-slate-500 dark:text-slate-400">{asset.description || "暂无描述"}</p>
+        <p className={`line-clamp-2 text-sm ${canDelete ? "text-red-700 dark:text-red-300" : "text-slate-500 dark:text-slate-400"}`}>{asset.description || "暂无描述"}</p>
         {asset.sourceOriginalFilename && (
           <p className="truncate text-xs text-slate-500 dark:text-slate-400">
             来源：{asset.sourceOriginalFilename}
@@ -278,9 +359,10 @@ function ListRow({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><AssetStatus asset={asset} /><AssetTags asset={asset} /></div>
         {showDiagnostics && <Diagnostics asset={asset} />}
       </div>
-      <div className="hidden shrink-0 items-center gap-2 sm:flex">
-        <Button variant="ghost" size="sm" onClick={onPreview} aria-label={`预览 ${asset.name}`}><Eye className="size-3.5" /></Button>
-        {canPublish && <Button size="sm" disabled={publishing} onClick={() => void onPublish(asset.id)}>{publishing ? "正在入库…" : "入库"}</Button>}
+      <div className="flex shrink-0 items-center gap-2">
+        {asset.entryType === "asset" && <Button variant="ghost" size="sm" onClick={onPreview} aria-label={`预览 ${asset.name}`}><Eye className="size-3.5" /></Button>}
+        {canPublish && <Button size="sm" disabled={working} onClick={() => void onPublish(asset.id)}>{working ? "正在入库…" : "入库"}</Button>}
+        {canDelete && <Button variant="destructive" size="sm" disabled={working} onClick={() => void onDelete(asset)}><Trash2 className="size-3.5" />{working ? "删除中…" : "删除素材"}</Button>}
       </div>
     </article>
   );
