@@ -20,6 +20,9 @@ export const assets = sqliteTable(
     mimeType: text("mime_type").notNull(),
     sizeBytes: integer("size_bytes").notNull(),
     directPublish: integer("direct_publish", { mode: "boolean" }).notNull(),
+    sourceBatchId: text("source_batch_id").references(
+      (): ReturnType<typeof text> => videoSceneBatches.id,
+    ),
     processingStatus: text("processing_status", {
       enum: ["queued", "validating", "analyzing", "completed", "failed"],
     })
@@ -39,6 +42,59 @@ export const assets = sqliteTable(
   (table) => [
     index("assets_review_created_idx").on(table.reviewStatus, table.createdAt),
   ],
+);
+
+export const videoSceneBatches = sqliteTable(
+  "video_scene_batches",
+  {
+    id: text("id").primaryKey(),
+    originalFilename: text("original_filename").notNull(),
+    originalPath: text("original_path"),
+    sizeBytes: integer("size_bytes").notNull(),
+    directPublish: integer("direct_publish", { mode: "boolean" }).notNull(),
+    processingStatus: text("processing_status", {
+      enum: [
+        "queued",
+        "splitting",
+        "validating_segments",
+        "analyzing",
+        "completed",
+        "failed",
+      ],
+    })
+      .notNull()
+      .default("queued"),
+    sceneCount: integer("scene_count"),
+    externalTaskId: text("external_task_id"),
+    failureCode: text("failure_code"),
+    failureMessage: text("failure_message"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [index("scene_batches_status_created_idx").on(table.processingStatus, table.createdAt)],
+);
+
+export const videoSceneBatchJobs = sqliteTable(
+  "video_scene_batch_jobs",
+  {
+    id: text("id").primaryKey(),
+    batchId: text("batch_id")
+      .notNull()
+      .references(() => videoSceneBatches.id),
+    status: text("status", {
+      enum: ["queued", "running", "completed", "failed"],
+    })
+      .notNull()
+      .default("queued"),
+    attempt: integer("attempt").notNull().default(0),
+    availableAt: integer("available_at", { mode: "timestamp_ms" }).notNull(),
+    claimedAt: integer("claimed_at", { mode: "timestamp_ms" }),
+    stage: text("stage").notNull().default("queued"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("scene_batch_jobs_queue_idx").on(table.status, table.availableAt)],
 );
 
 export const uploadRequests = sqliteTable(

@@ -28,6 +28,17 @@ export function initializeDatabase(
     // worker, so concurrent service startup cannot race this PRAGMA.
     connection.sqlite.pragma("journal_mode = WAL");
     migrateDatabase(connection, migrationsFolder);
+    const assetColumns = connection.sqlite
+      .prepare("PRAGMA table_info(assets)")
+      .all() as Array<{ name: string }>;
+    if (!assetColumns.some((column) => column.name === "source_batch_id")) {
+      connection.sqlite.exec(
+        "ALTER TABLE assets ADD COLUMN source_batch_id text REFERENCES video_scene_batches(id)",
+      );
+    }
+    connection.sqlite.exec(
+      "CREATE INDEX IF NOT EXISTS assets_source_batch_idx ON assets(source_batch_id)",
+    );
     return connection;
   } catch (error) {
     connection.sqlite.close();
