@@ -2,9 +2,23 @@ openapi: 3.1.0
 info:
   title: 多模态素材库 API
   version: 1.0.0
+tags:
+  - name: 图片上传
+    description: 图片素材上传接口
+  - name: 视频上传
+    description: 普通视频上传及视频分镜批次接口
+  - name: 上传状态
+    description: 单素材上传与后台处理状态查询
+  - name: 素材管理
+    description: 素材查询、编辑、入库、重试和删除
+  - name: 素材搜索
+    description: 已入库素材检索
+  - name: 媒体访问
+    description: 原始媒体预览和下载
 paths:
   /api/uploads/images:
     post:
+      tags: [图片上传]
       summary: 上传单张图片
       requestBody:
         required: true
@@ -25,6 +39,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
   /api/uploads/videos:
     post:
+      tags: [视频上传]
       summary: 上传 H.264 MP4 视频并异步校验、提取关键帧
       description: 兼容的单素材视频上传接口；素材库上传页默认使用 /api/uploads/video-scenes。
       requestBody:
@@ -46,6 +61,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
   /api/uploads/video-scenes:
     post:
+      tags: [视频上传]
       summary: 上传原视频并异步切分为独立分镜素材
       description: 上传页默认使用此接口。原视频完成分镜切分和全量大小校验后，每个分镜进入原有视频解析链路。
       requestBody:
@@ -67,6 +83,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
   /api/uploads/video-scenes/{uploadId}:
     get:
+      tags: [视频上传]
       summary: 查询视频分镜批次及子素材状态
       parameters:
         - { name: uploadId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -79,6 +96,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
   /api/uploads/{uploadId}:
     get:
+      tags: [上传状态]
       summary: 查询上传与处理状态
       parameters:
         - { name: uploadId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -90,6 +108,7 @@ paths:
               schema: { $ref: "#/components/schemas/UploadStatus" }
   /api/assets:
     get:
+      tags: [素材管理]
       summary: 分页查询未删除的素材及其处理、审核状态
       parameters:
         - { name: view, in: query, description: pending 返回待审核素材，published 返回已入库素材, schema: { type: string, enum: [pending, published], default: published } }
@@ -104,6 +123,7 @@ paths:
               schema: { $ref: "#/components/schemas/AssetPage" }
   /api/search:
     post:
+      tags: [素材搜索]
       summary: 按描述语义检索已入库素材
       description: 可先用关键词按标签模糊匹配规则粗筛候选，再由 Chroma 对分析结果进行向量检索。默认返回相似度最高的 5 个素材。
       requestBody:
@@ -120,6 +140,7 @@ paths:
     parameters:
       - { name: assetId, in: path, required: true, schema: { type: string, format: uuid } }
     get:
+      tags: [素材管理]
       summary: 获取素材完整详情与分析结果
       responses:
         "200":
@@ -129,6 +150,7 @@ paths:
               schema: { $ref: "#/components/schemas/AssetDetail" }
         "404": { $ref: "#/components/responses/Error" }
     patch:
+      tags: [素材管理]
       summary: 整体更新素材名称、描述和标签
       requestBody:
         required: true
@@ -138,11 +160,13 @@ paths:
       responses:
         "200": { description: 更新后的素材详情 }
     delete:
+      tags: [素材管理]
       summary: 软删除素材并异步清理媒体文件
       responses:
         "204": { description: 已删除 }
   /api/assets/{assetId}/publish:
     post:
+      tags: [素材管理]
       summary: 将已完成分析的素材正式入库
       parameters:
         - { name: assetId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -150,6 +174,7 @@ paths:
         "200": { description: 已入库的素材详情 }
   /api/assets/{assetId}/retry:
     post:
+      tags: [素材管理]
       summary: 将处理失败的素材重新加入分析队列
       parameters:
         - { name: assetId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -157,6 +182,7 @@ paths:
         "202": { description: 已重新入队的处理状态 }
   /api/media/{assetId}:
     get:
+      tags: [媒体访问]
       summary: 以支持 Range 的方式流式返回原始媒体
       parameters:
         - { name: assetId, in: path, required: true, schema: { type: string, format: uuid } }

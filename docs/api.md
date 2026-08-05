@@ -18,9 +18,9 @@
 }
 ```
 
-常见错误码：`invalid_request`、`multiple_files`、`unsupported_media_type`、`file_too_large`、`corrupt_file`、`unsupported_video_codec`、`invalid_video_frames`、`model_not_configured`、`model_video_unsupported`、`video_frames_missing`、`model_request_failed`、`model_response_invalid`、`storage_error`、`internal_error`。
+常见错误码：`invalid_request`、`multiple_files`、`unsupported_media_type`、`file_too_large`、`corrupt_file`、`unsupported_video_codec`、`invalid_video_frames`、`model_not_configured`、`model_video_unsupported`、`video_frames_missing`、`model_request_failed`、`model_response_invalid`、`scene_split_failed`、`storage_error`、`internal_error`。
 
-## 上传与处理状态
+## 图片上传
 
 ### `POST /api/uploads/images`
 
@@ -35,9 +35,11 @@
 
 图片默认最大 20 MiB，视频默认最大 200 MiB；可由 `MAX_IMAGE_BYTES`、`MAX_VIDEO_BYTES` 配置覆盖。
 
+## 视频上传
+
 ### `POST /api/uploads/videos`
 
-上传一个 H.264 MP4 视频。文件流式落盘并入队后返回 `202`；worker 随后校验 MP4/H.264 内容，使用服务端 FFmpeg 均匀抽取 1–5 张 JPEG 关键帧，再调用模型分析。
+兼容的单素材接口：上传一个 H.264 MP4 视频。文件流式落盘并入队后返回 `202`；worker 随后校验 MP4/H.264 内容，使用服务端 FFmpeg 均匀抽取 1–5 张 JPEG 关键帧，再调用模型分析。上传页的视频默认使用下面的分镜批次接口。
 
 视频示例：
 
@@ -61,6 +63,24 @@ curl -X POST http://localhost:3000/api/uploads/videos \
   "failureMessage": null
 }
 ```
+
+### `POST /api/uploads/video-scenes`
+
+上传一个 MP4 原视频并返回 `202 Accepted`。worker 调用独立 Python 场景检测服务；只有完整清单和所有实际下载分镜都不超过 `7 × 1024 × 1024` 字节时，才会一次性创建子素材并开始分析。任一分镜超限返回可查询的 `file_too_large` 批次失败；服务不可用、超时、非法或空清单、下载失败统一为 `scene_split_failed`。
+
+```bash
+curl -X POST http://localhost:3000/api/uploads/video-scenes \
+  -F 'file=@demo.mp4;type=video/mp4' \
+  -F 'directPublish=false'
+```
+
+响应包含批次 `uploadId`、来源文件名、批次状态、进度、分镜数、失败信息和 `childAssets`。批次状态依次为 `queued`、`splitting`、`validating_segments`、`analyzing`，最终进入 `completed` 或 `failed`。
+
+### `GET /api/uploads/video-scenes/{uploadId}`
+
+查询分镜批次及可见子素材。批次尚未通过完整大小门禁时 `childAssets` 为空；通过后所有子素材一次出现。任一子素材分析失败时整批回滚，列表重新为空。批次完成前，不能对子素材单独发布、重试或删除。
+
+## 上传状态
 
 ### `GET /api/uploads/{uploadId}`
 
@@ -103,6 +123,7 @@ curl 'http://localhost:3000/api/assets?view=published&page=1&limit=8&tag=%E6%B0%
         { "category": "object", "value": "橙子", "source": "human", "confidence": null }
       ],
       "mediaUrl": "/api/media/3c3eb3fd-e239-4d85-8a2c-e99f2b175c4a",
+      "sourceOriginalFilename": null,
       "createdAt": "2026-08-03T10:00:00.000Z",
       "searchScore": 1000,
       "semanticScore": 0.612
@@ -171,6 +192,7 @@ Chroma 或 embedding 服务未配置时返回 `503`；没有符合关键词粗�
 | 字段 | 说明 |
 | --- | --- |
 | `originalFilename` | 原始上传文件名。 |
+| `sourceOriginalFilename` | 分镜素材的来源原视频文件名；普通素材为 `null`。 |
 | `mimeType` | 服务端验证后的 MIME 类型。 |
 | `sizeBytes` | 文件大小。 |
 | `directPublish` | 是否在分析完成后自动入库。 |

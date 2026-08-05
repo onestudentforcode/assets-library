@@ -2,21 +2,21 @@
 
 一个基于 Next.js、TypeScript、Tailwind CSS、shadcn/ui、SQLite 和本地文件系统的单机多模态素材库 MVP。
 
-第一阶段支持一次选择多个本地素材，浏览器会将每个素材作为独立请求逐个上传：
+支持一次选择多个本地素材，浏览器会将每个素材作为独立请求逐个上传：
 
 - JPEG、PNG、WebP 图片，默认最大 20 MB
 - H.264 编码的 MP4 视频，默认最大 200 MB
 
-视频上传落盘后由后台 worker 校验，并通过服务端 FFmpeg 提取少量 JPEG 关键帧供视觉分析。音频、URL 上传、音轨分析、批量编辑和转码不在本阶段范围内。
+上传页中的视频会先交给独立的 Python Scene Detection Service 切分。完整分镜清单及实际下载内容都必须通过每段 7 MiB 的门禁，之后每个分镜才作为独立素材复用现有 FFmpeg 抽帧和视觉分析链路。兼容接口 `/api/uploads/videos` 仍保留原有的单视频素材行为。音频、URL 上传、音轨分析、批量编辑和主动转码不在本阶段范围内。
 
 ## 本地运行
 
-环境要求：Node.js 22+、npm、FFmpeg/ffprobe。首次运行：
+环境要求：Node.js 22+、pnpm、FFmpeg/ffprobe。首次运行：
 
 ```bash
-npm install
+pnpm install
 cp .env.example .env
-npm run db:migrate
+pnpm db:migrate
 ```
 
 如需语义搜索，先在终端 1 启动本地 Chroma（需要安装 `uv`）：
@@ -33,7 +33,7 @@ uvx --from chromadb chroma run \
 在终端 2 启动 Web 和 worker：
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 开发命令同时启动 Next.js Web 与后台 worker，并监听源码变化自动重载。打开 <http://localhost:3000>。若 3000 端口已占用：
@@ -66,11 +66,13 @@ NewAPI 令牌，网关关闭鉴权时可以留空；留空后请求不会发送 
 MODEL_ENABLE_THINKING=false
 ```
 
-视频分析使用 Chat Completions 的多图片输入。worker 按视频时长在服务端提取 1–5 张 JPEG 关键帧，并将关键帧及其时间点交给模型；原始 MP4 只用于存储和预览。配置：
+视频分析使用 Chat Completions 的多图片输入。worker 按视频时长在服务端提取 1–5 张 JPEG 关键帧，并将关键帧及其时间点交给模型；原始 MP4 只用于存储和预览。分镜服务通过以下配置接入：
 
 ```dotenv
 MODEL_VIDEO_MODE=frames
 MODEL_VIDEO_TIMEOUT_MS=300000
+SCENE_DETECT_BASE_URL=http://127.0.0.1:28200
+SCENE_DETECT_TIMEOUT_MS=600000
 ```
 
 不超过 5 秒的视频每秒取一帧（向上取整，至少一帧），超过 5 秒的视频固定取五帧；时间点均为各等分区间的中点，因此长视频取 10%、30%、50%、70%、90% 位置。FFmpeg 以 JPEG 保存关键帧。视频大小不再影响模型传递策略，也不需要公网 URL。
@@ -181,13 +183,13 @@ sudo systemctl restart docker
 docker compose up -d
 ```
 
-Compose 会自动构建本地镜像、创建两个持久化 volume，然后启动 Web 和 worker。镜像入口脚本会在每个服务启动前检查并升级数据库结构；共享锁会确保 SQLite 迁移不会并发执行。当前 Compose 配置让构建与运行均使用 Linux host 网络模式，以兼容不支持 Docker bridge veth 的宿主环境，因此 Web 直接监听宿主机的 <http://localhost:3000>。
+Compose 会构建素材库镜像，并从固定提交 `4f29ad7141bf63c04576ecd6734578680b5968ad` 构建独立的 Python/FFmpeg 分镜镜像，然后启动 Web、worker、场景检测和 Chroma。场景检测服务只监听宿主机 `127.0.0.1:28200`，不会暴露到外部网卡；其 Python 源码保持在上游仓库，素材库不复制或重写场景检测核心。镜像入口脚本会在 Web 和 worker 启动前检查并升级数据库结构，共享锁确保 SQLite 迁移不会并发执行。
 
 查看服务状态与日志：
 
 ```bash
 docker compose ps
-docker compose logs -f web worker
+docker compose logs -f web worker scene-detect
 ```
 
 代码或 Dockerfile 更新后，使用下面的命令重新构建并启动：
@@ -259,11 +261,11 @@ docker rm assets-library-web assets-library-worker
 ## 验证
 
 ```bash
-npm run lint
-npm run typecheck
-npm test
-npm run test:e2e
-npm run build
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:e2e
+pnpm build
 ```
 
 更完整的验收步骤见 [spec/quickstart.md](spec/quickstart.md)。

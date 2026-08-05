@@ -16,6 +16,8 @@ pnpm dev
 
 打开 `http://localhost:3000`。`pnpm dev` 同时启动 Next.js 和 worker。
 
+视频分镜链路需要独立 Python 服务。完整验证推荐执行 `docker compose up -d`；仅本地运行 `pnpm dev` 时，应另行启动固定提交的 Scene Detection Service，并确保其只监听 `127.0.0.1:28200`。
+
 ## 验证
 
 1. 上传不超过 20 MB 的 JPEG/PNG/WebP，确认上传成功后立即出现在概览并显示分析状态。
@@ -31,7 +33,7 @@ pnpm dev
 
 ## Phase 11：视频分镜批次验收
 
-以下步骤在 Phase 11 实现完成后执行：
+以下步骤用于回归 Phase 11 已实现功能：
 
 1. 通过 Compose 启动素材库和场景检测服务，确认场景检测服务只监听 `127.0.0.1:28200`，健康检查成功，素材库使用固定提交 `4f29ad7141bf63c04576ecd6734578680b5968ad`。
 2. 从上传页提交一个不超过 200 MiB、可切出多个自然场景的 H.264 MP4，确认请求返回 `202`，状态经过 `queued`、`splitting`、`validating_segments` 和 `analyzing`。
