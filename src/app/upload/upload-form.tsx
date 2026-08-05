@@ -377,6 +377,15 @@ export function UploadForm() {
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">
                         {item.file.name}
                       </span>
+                      <span
+                        className={`shrink-0 text-xs ${
+                          item.phase === "failed"
+                            ? "font-medium text-red-600"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {phaseLabels[item.phase]}
+                      </span>
                       {item.phase === "queued" && (
                         <button
                           type="button"
@@ -388,6 +397,15 @@ export function UploadForm() {
                         </button>
                       )}
                     </div>
+                    {item.error && (
+                      <p
+                        role="alert"
+                        className="mt-2 flex items-start gap-1.5 text-xs text-red-600"
+                      >
+                        <XCircle className="mt-0.5 size-3.5 shrink-0" />
+                        {item.error}
+                      </p>
+                    )}
 
                     <div
                       aria-label={`${item.file.name} 预览`}
@@ -412,7 +430,7 @@ export function UploadForm() {
                           />
                         )}
                       </div>
-                      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
+                      <div className="mt-2 flex items-center text-xs text-slate-500">
                         <span className="flex min-w-0 items-center gap-1.5">
                           {isVideo(item.file) ? (
                             <FileVideo2 className="size-3.5 shrink-0" />
@@ -421,7 +439,6 @@ export function UploadForm() {
                           )}
                           {(item.file.size / 1024 / 1024).toFixed(1)} MB
                         </span>
-                        <span>{phaseLabels[item.phase]}</span>
                       </div>
                       {(item.phase === "uploading" ||
                         item.phase === "processing") && (
@@ -431,12 +448,6 @@ export function UploadForm() {
                             style={{ width: `${item.progress}%` }}
                           />
                         </div>
-                      )}
-                      {item.error && (
-                        <p className="mt-2 flex items-start gap-1.5 text-xs text-red-600">
-                          <XCircle className="mt-0.5 size-3.5 shrink-0" />
-                          {item.error}
-                        </p>
                       )}
                       {item.status && "assetId" in item.status && (
                         <Link

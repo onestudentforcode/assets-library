@@ -67,6 +67,8 @@ test("overview and upload pages expose the MVP scope", async ({ page }) => {
 
 test("uses the scene batch endpoint for videos", async ({ page }) => {
   let requestedPath = "";
+  const failureMessage =
+    "切分后的分镜 1 超过 7 MiB，整个视频处理已失败，请压缩原视频后重新上传。";
   await page.route("**/api/uploads/**", async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
@@ -88,7 +90,20 @@ test("uses the scene batch endpoint for videos", async ({ page }) => {
       });
       return;
     }
-    await route.fulfill({ status: 503, body: "temporarily unavailable" });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        uploadId: "00000000-0000-4000-8000-000000000001",
+        originalFilename: "scenes.mp4",
+        processingStatus: "failed",
+        progressPercent: 100,
+        sceneCount: 1,
+        failureCode: "file_too_large",
+        failureMessage,
+        childAssets: [],
+      }),
+    });
   });
   await page.goto("/upload");
   await page.locator('input[type="file"]').setInputFiles({
@@ -98,6 +113,10 @@ test("uses the scene batch endpoint for videos", async ({ page }) => {
   });
   await page.getByRole("button", { name: "开始上传" }).click();
   await expect.poll(() => requestedPath).toBe("/api/uploads/video-scenes");
+  await expect(page.getByRole("alert").filter({ hasText: failureMessage })).toHaveText(
+    failureMessage,
+  );
+  await expect(page.getByText("处理失败", { exact: true })).toBeVisible();
 });
 
 test("submits every selected asset as an independent upload", async ({
