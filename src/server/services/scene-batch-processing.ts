@@ -12,8 +12,8 @@ import {
 import {
   clearSceneBatchOriginalPath,
   clearSceneBatchExternalTask,
-  completeSceneBatchJob,
   createSceneChildren,
+  discardSettledSceneBatchJobs,
   failSceneBatch,
   getVideoSceneBatchRecord,
   heartbeatSceneBatchJob,
@@ -54,7 +54,7 @@ function validateManifest(manifest: SceneSplitResponse) {
   if (oversized) {
     throw new AppError(
       "file_too_large",
-      `分镜 ${oversized.index} 超过 7 MiB 限制。`,
+      `切分后的分镜 ${oversized.index} 超过 7 MiB，整个视频处理已失败，请压缩原视频后重新上传。`,
     );
   }
 }
@@ -62,11 +62,8 @@ function validateManifest(manifest: SceneSplitResponse) {
 function cleanOriginal(batchId: string) {
   const batch = getVideoSceneBatchRecord(batchId);
   if (!batch?.originalPath) return;
-  try {
-    removeStoredFile(batch.originalPath);
-  } finally {
-    clearSceneBatchOriginalPath(batchId);
-  }
+  removeStoredFile(batch.originalPath);
+  clearSceneBatchOriginalPath(batchId);
 }
 
 export async function cleanupSettledSceneBatchArtifacts(
@@ -82,19 +79,22 @@ export async function cleanupSettledSceneBatchArtifacts(
       }
     }
     if (batch.externalTaskId) {
-      await bestEffortDelete(client, batch.externalTaskId);
-      clearSceneBatchExternalTask(batch.id);
+      if (await bestEffortDelete(client, batch.externalTaskId)) {
+        clearSceneBatchExternalTask(batch.id);
+      }
     }
   }
   return batches.length;
 }
 
 async function bestEffortDelete(client: SceneDetectGateway, taskId: string | null) {
-  if (!taskId) return;
+  if (!taskId) return true;
   try {
     await client.deleteTask(taskId);
+    return true;
   } catch (error) {
     console.error("Failed to clean external scene task.", error);
+    return false;
   }
 }
 
@@ -105,7 +105,7 @@ export async function processSceneBatchJob(
   const batch = getVideoSceneBatchRecord(job.batchId);
   if (!batch) return;
   if (["completed", "failed", "analyzing"].includes(batch.processingStatus)) {
-    completeSceneBatchJob(job);
+    discardSettledSceneBatchJobs();
     await cleanupSettledSceneBatchArtifacts(client);
     return;
   }
@@ -168,8 +168,9 @@ export async function processSceneBatchJob(
     }
     createSceneChildren(job, children);
     cleanOriginal(batch.id);
-    await bestEffortDelete(client, externalTaskId);
-    clearSceneBatchExternalTask(batch.id);
+    if (await bestEffortDelete(client, externalTaskId)) {
+      clearSceneBatchExternalTask(batch.id);
+    }
   } catch (error) {
     for (const originalPath of storedChildren) {
       try {
@@ -186,15 +187,15 @@ export async function processSceneBatchJob(
       batch.id,
       appError.code satisfies FailureCode,
       appError.message,
-      job,
     );
     try {
       cleanOriginal(batch.id);
     } catch (cleanupError) {
       console.error("Failed to clean scene batch source video.", cleanupError);
     }
-    await bestEffortDelete(client, externalTaskId);
-    clearSceneBatchExternalTask(batch.id);
+    if (await bestEffortDelete(client, externalTaskId)) {
+      clearSceneBatchExternalTask(batch.id);
+    }
   } finally {
     clearInterval(heartbeat);
   }

@@ -7,6 +7,7 @@ import { loadConfig } from "@/server/config";
 import { processJob } from "@/server/services/processing";
 import {
   claimNextSceneBatchJob,
+  discardSettledSceneBatchJobs,
   recoverStaleSceneBatchJobs,
   reconcileAnalyzingSceneBatches,
 } from "@/server/repositories/scene-batches";
@@ -29,6 +30,7 @@ process.on("SIGTERM", () => {
 async function main() {
   const config = loadConfig();
   recoverStaleJobs();
+  discardSettledSceneBatchJobs();
   recoverStaleSceneBatchJobs();
   reconcileAnalyzingSceneBatches();
   await cleanupSettledSceneBatchArtifacts();
@@ -38,6 +40,7 @@ async function main() {
   }
   const recoveryTimer = setInterval(() => {
     const recovered = recoverStaleJobs();
+    const discardedSceneBatches = discardSettledSceneBatchJobs();
     const recoveredSceneBatches = recoverStaleSceneBatchJobs();
     const reconciledSceneBatches = reconcileAnalyzingSceneBatches();
     if (recovered + recoveredSceneBatches > 0) {
@@ -47,6 +50,9 @@ async function main() {
     }
     if (reconciledSceneBatches > 0) {
       console.log(`Reconciled ${reconciledSceneBatches} scene batch(es).`);
+    }
+    if (discardedSceneBatches > 0) {
+      console.log(`Discarded ${discardedSceneBatches} settled scene batch job(s).`);
     }
   }, recoveryIntervalMs);
   console.log(

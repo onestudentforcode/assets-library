@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, asc, eq, inArray, isNotNull, lt, ne, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { db, sqlite } from "@/server/db";
 import {
   assets,
@@ -123,16 +123,25 @@ export function claimNextSceneBatchJob(): ClaimedSceneBatchJob | null {
   return sqlite.transaction(() => {
     const row = sqlite
       .prepare(
-        `SELECT id, batch_id AS batchId, attempt FROM video_scene_batch_jobs
-         WHERE status = 'queued' AND available_at <= ?
-         ORDER BY created_at ASC LIMIT 1`,
+        `SELECT job.id, job.batch_id AS batchId, job.attempt
+         FROM video_scene_batch_jobs AS job
+         INNER JOIN video_scene_batches AS batch ON batch.id = job.batch_id
+         WHERE job.status = 'queued' AND job.available_at <= ?
+           AND batch.processing_status IN ('queued', 'splitting', 'validating_segments')
+         ORDER BY job.created_at ASC LIMIT 1`,
       )
       .get(now) as ClaimedSceneBatchJob | undefined;
     if (!row) return null;
     const result = sqlite
       .prepare(
         `UPDATE video_scene_batch_jobs SET status = 'running', claimed_at = ?,
-         attempt = attempt + 1, updated_at = ? WHERE id = ? AND status = 'queued'`,
+         attempt = attempt + 1, updated_at = ?
+         WHERE id = ? AND status = 'queued'
+           AND EXISTS (
+             SELECT 1 FROM video_scene_batches
+             WHERE id = video_scene_batch_jobs.batch_id
+               AND processing_status IN ('queued', 'splitting', 'validating_segments')
+           )`,
       )
       .run(now, now, row.id);
     return result.changes === 1 ? { ...row, attempt: row.attempt + 1 } : null;
@@ -310,7 +319,6 @@ export function failSceneBatch(
   batchId: string,
   code: FailureCode,
   message: string,
-  job?: ClaimedSceneBatchJob,
 ) {
   const now = new Date();
   db.transaction((tx) => {
@@ -367,12 +375,15 @@ export function failSceneBatch(
       })
       .where(eq(videoSceneBatches.id, batchId))
       .run();
-    if (job) {
-      tx.update(videoSceneBatchJobs)
-        .set({ status: "failed", updatedAt: now })
-        .where(eq(videoSceneBatchJobs.id, job.id))
-        .run();
-    }
+    tx.update(videoSceneBatchJobs)
+      .set({ status: "failed", claimedAt: null, updatedAt: now })
+      .where(
+        and(
+          eq(videoSceneBatchJobs.batchId, batchId),
+          inArray(videoSceneBatchJobs.status, ["queued", "running"]),
+        ),
+      )
+      .run();
   });
 }
 
@@ -448,15 +459,42 @@ export function listSettledSceneBatchesPendingCleanup() {
 }
 
 export function recoverStaleSceneBatchJobs(staleAfterMs = 2 * 60_000) {
-  const now = new Date();
-  return db
-    .update(videoSceneBatchJobs)
-    .set({ status: "queued", claimedAt: null, availableAt: now, updatedAt: now })
-    .where(
-      and(
-        eq(videoSceneBatchJobs.status, "running"),
-        lt(videoSceneBatchJobs.claimedAt, new Date(now.getTime() - staleAfterMs)),
-      ),
+  const now = Date.now();
+  return sqlite
+    .prepare(
+      `UPDATE video_scene_batch_jobs
+       SET status = 'queued', claimed_at = NULL, available_at = ?, updated_at = ?
+       WHERE status = 'running' AND claimed_at < ?
+         AND EXISTS (
+           SELECT 1 FROM video_scene_batches
+           WHERE id = video_scene_batch_jobs.batch_id
+             AND processing_status IN ('queued', 'splitting', 'validating_segments')
+         )`,
     )
-    .run().changes;
+    .run(now, now, now - staleAfterMs).changes;
+}
+
+export function discardSettledSceneBatchJobs() {
+  const now = Date.now();
+  return sqlite
+    .prepare(
+      `UPDATE video_scene_batch_jobs
+       SET status = CASE
+         WHEN EXISTS (
+           SELECT 1 FROM video_scene_batches
+           WHERE id = video_scene_batch_jobs.batch_id
+             AND processing_status = 'failed'
+         ) THEN 'failed'
+         ELSE 'completed'
+       END,
+       claimed_at = NULL,
+       updated_at = ?
+       WHERE status IN ('queued', 'running')
+         AND EXISTS (
+           SELECT 1 FROM video_scene_batches
+           WHERE id = video_scene_batch_jobs.batch_id
+             AND processing_status IN ('analyzing', 'completed', 'failed')
+         )`,
+    )
+    .run(now).changes;
 }

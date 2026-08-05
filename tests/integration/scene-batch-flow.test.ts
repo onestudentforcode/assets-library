@@ -63,8 +63,13 @@ describe("video scene batch flow", () => {
       })),
     };
     let downloads = 0;
-    const client: SceneDetectGateway & { downloads: () => number } = {
+    let deletions = 0;
+    const client: SceneDetectGateway & {
+      downloads: () => number;
+      deletions: () => number;
+    } = {
       downloads: () => downloads,
+      deletions: () => deletions,
       async split() { return manifest; },
       async getTask() { return manifest; },
       async downloadSegment(_taskId, index, targetPath) {
@@ -72,7 +77,7 @@ describe("video scene batch flow", () => {
         await fs.writeFile(targetPath, `segment-${index}`);
         return segmentSizes[index - 1]!;
       },
-      async deleteTask() {},
+      async deleteTask() { deletions += 1; },
     };
     return client;
   }
@@ -123,7 +128,10 @@ describe("video scene batch flow", () => {
 
   it("fails before every download and creates zero children when metadata exceeds by one byte", async () => {
     const repository = await import("@/server/repositories/scene-batches");
+    const database = await import("@/server/db");
+    const schema = await import("@/server/db/schema");
     const batches = await import("@/server/services/scene-batch-processing");
+    const { eq } = await import("drizzle-orm");
     const batchId = await createBatch(false, "oversized");
     const client = gateway([7 * 1024 * 1024 + 1]);
     const job = repository.claimNextSceneBatchJob();
@@ -133,9 +141,37 @@ describe("video scene batch flow", () => {
     expect(status).toMatchObject({
       processingStatus: "failed",
       failureCode: "file_too_large",
+      failureMessage: expect.stringContaining("整个视频处理已失败"),
       childAssets: [],
     });
     expect(client.downloads()).toBe(0);
+    expect(client.deletions()).toBe(1);
+    expect(repository.getVideoSceneBatchRecord(batchId)).toMatchObject({
+      originalPath: null,
+      externalTaskId: null,
+    });
+
+    const storedJob = database.db
+      .select()
+      .from(schema.videoSceneBatchJobs)
+      .where(eq(schema.videoSceneBatchJobs.batchId, batchId))
+      .get()!;
+    expect(storedJob.status).toBe("failed");
+    database.db
+      .update(schema.videoSceneBatchJobs)
+      .set({ status: "queued", availableAt: new Date() })
+      .where(eq(schema.videoSceneBatchJobs.id, storedJob.id))
+      .run();
+    expect(repository.claimNextSceneBatchJob()).toBeNull();
+    expect(repository.recoverStaleSceneBatchJobs(0)).toBe(0);
+    expect(repository.discardSettledSceneBatchJobs()).toBe(1);
+    expect(
+      database.db
+        .select({ status: schema.videoSceneBatchJobs.status })
+        .from(schema.videoSceneBatchJobs)
+        .where(eq(schema.videoSceneBatchJobs.id, storedJob.id))
+        .get()?.status,
+    ).toBe("failed");
   });
 
   it("rolls back every child when one analysis fails", async () => {

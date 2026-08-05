@@ -42,7 +42,10 @@ describe("scene detection client", () => {
     );
     await expect(
       client.downloadSegment("a".repeat(32), 1, path.join(directory, "too-large.mp4"), 7 * 1024 * 1024),
-    ).rejects.toMatchObject({ code: "file_too_large" });
+    ).rejects.toMatchObject({
+      code: "file_too_large",
+      message: expect.stringContaining("整个视频处理已失败"),
+    });
     await expect(fs.stat(path.join(directory, "too-large.mp4"))).rejects.toThrow();
     await fs.rm(directory, { recursive: true, force: true });
   });

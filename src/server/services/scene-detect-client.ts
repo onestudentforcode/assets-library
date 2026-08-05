@@ -151,7 +151,12 @@ export class SceneDetectClient implements SceneDetectGateway {
       transform(chunk: Buffer, _encoding, callback) {
         sizeBytes += chunk.length;
         callback(
-          sizeBytes > maximumBytes ? new AppError("file_too_large") : null,
+          sizeBytes > maximumBytes
+            ? new AppError(
+                "file_too_large",
+                `切分后的分镜 ${index} 实际大小超过 7 MiB，整个视频处理已失败，请压缩原视频后重新上传。`,
+              )
+            : null,
           chunk,
         );
       },
