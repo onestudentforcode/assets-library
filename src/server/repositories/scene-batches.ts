@@ -78,7 +78,9 @@ export function getVideoSceneBatchRecord(batchId: string) {
 
 export function getVideoSceneBatchStatus(batchId: string): VideoSceneBatchStatus {
   const batch = getVideoSceneBatchRecord(batchId);
-  if (!batch) throw new AppError("invalid_request", "分镜上传记录不存在。", 404);
+  if (!batch || batch.deletedAt) {
+    throw new AppError("invalid_request", "分镜上传记录不存在。", 404);
+  }
   const children = db
     .select({ upload: uploadRequests, asset: assets })
     .from(assets)
@@ -497,4 +499,30 @@ export function discardSettledSceneBatchJobs() {
          )`,
     )
     .run(now).changes;
+}
+
+export function dismissFailedSceneBatch(batchId: string) {
+  const batch = getVideoSceneBatchRecord(batchId);
+  if (!batch || batch.deletedAt) {
+    throw new AppError("invalid_request", "失败的分镜素材不存在。", 404);
+  }
+  if (batch.processingStatus !== "failed") {
+    throw new AppError("invalid_request", "只能删除处理失败的分镜素材。", 409);
+  }
+  const now = new Date();
+  db.transaction((tx) => {
+    tx.update(videoSceneBatches)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(eq(videoSceneBatches.id, batchId))
+      .run();
+    tx.update(videoSceneBatchJobs)
+      .set({ status: "failed", claimedAt: null, updatedAt: now })
+      .where(
+        and(
+          eq(videoSceneBatchJobs.batchId, batchId),
+          inArray(videoSceneBatchJobs.status, ["queued", "running"]),
+        ),
+      )
+      .run();
+  });
 }

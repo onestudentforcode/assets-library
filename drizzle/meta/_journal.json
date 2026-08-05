@@ -15,6 +15,13 @@
       "when": 1785916800000,
       "tag": "0001_video_scene_batches",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785924000000,
+      "tag": "0002_failed_scene_batch_overview",
+      "breakpoints": true
     }
   ]
 }

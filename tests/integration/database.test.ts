@@ -49,7 +49,13 @@ describe("database initialization", () => {
           "SELECT count(*) AS count FROM __drizzle_migrations",
         )
         .get(),
-    ).toEqual({ count: 2 });
+    ).toEqual({ count: 3 });
+    expect(
+      sqlite
+        .prepare("PRAGMA table_info(video_scene_batches)")
+        .all()
+        .some((column) => (column as { name: string }).name === "deleted_at"),
+    ).toBe(true);
     void db;
     sqlite.close();
     fs.rmSync(directory, { recursive: true, force: true });
@@ -89,7 +95,7 @@ describe("database initialization", () => {
       adopted.sqlite
         .prepare("SELECT count(*) AS count FROM __drizzle_migrations")
         .get(),
-    ).toEqual({ count: 2 });
+    ).toEqual({ count: 3 });
     adopted.sqlite.close();
     fs.rmSync(directory, { recursive: true, force: true });
   });

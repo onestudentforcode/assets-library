@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, asc, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { db, sqlite } from "@/server/db";
 import {
   analysisResults,
@@ -155,6 +155,7 @@ function summaryFromRow(
     : null;
   return {
     id: row.id,
+    entryType: "asset",
     name: row.name,
     description: row.description,
     mediaType: row.mediaType,
@@ -163,6 +164,28 @@ function summaryFromRow(
     tags: tagList,
     mediaUrl: `/api/media/${row.id}`,
     sourceOriginalFilename,
+    failureCode: row.failureCode as FailureCode | null,
+    failureMessage: row.failureMessage,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function failedSceneBatchSummary(
+  row: typeof videoSceneBatches.$inferSelect,
+): AssetSummary {
+  return {
+    id: row.id,
+    entryType: "failed_scene_batch",
+    name: row.originalFilename.replace(/\.[^.]+$/, "") || row.originalFilename,
+    description: row.failureMessage ?? "视频分镜处理失败。",
+    mediaType: "video",
+    processingStatus: "failed",
+    reviewStatus: "pending_review",
+    tags: [],
+    mediaUrl: "",
+    sourceOriginalFilename: row.originalFilename,
+    failureCode: row.failureCode as FailureCode | null,
+    failureMessage: row.failureMessage,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -236,10 +259,55 @@ export async function listAssets({
 }: ListAssetsOptions = {}): Promise<AssetPage> {
   const safeLimit = Math.min(Math.max(limit, 1), 50);
   const requestedPage = Number.isInteger(page) && page > 0 ? page : 1;
+  if (view === "pending") {
+    const assetRows = db
+      .select()
+      .from(assets)
+      .where(eq(assets.reviewStatus, "pending_review"))
+      .all();
+    const failedBatchRows = db
+      .select()
+      .from(videoSceneBatches)
+      .where(
+        and(
+          eq(videoSceneBatches.processingStatus, "failed"),
+          isNull(videoSceneBatches.deletedAt),
+        ),
+      )
+      .all();
+    const entries = [
+      ...assetRows.map((row) => ({ kind: "asset" as const, row })),
+      ...failedBatchRows.map((row) => ({ kind: "batch" as const, row })),
+    ].sort(
+      (left, right) =>
+        right.row.createdAt.getTime() - left.row.createdAt.getTime() ||
+        right.row.id.localeCompare(left.row.id),
+    );
+    const total = entries.length;
+    const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+    const safePage = Math.min(requestedPage, totalPages);
+    const selected = entries.slice(
+      (safePage - 1) * safeLimit,
+      safePage * safeLimit,
+    );
+    const selectedAssetRows = selected.flatMap((entry) =>
+      entry.kind === "asset" ? [entry.row] : [],
+    );
+    const tagMap = getTagsForAssets(selectedAssetRows.map((row) => row.id));
+    return {
+      items: selected.map((entry) =>
+        entry.kind === "asset"
+          ? summaryFromRow(entry.row, tagMap.get(entry.row.id) ?? [])
+          : failedSceneBatchSummary(entry.row),
+      ),
+      page: safePage,
+      pageSize: safeLimit,
+      total,
+      totalPages,
+    };
+  }
   const normalizedTagQuery =
-    view === "published"
-      ? tagQuery?.trim().toLocaleLowerCase().slice(0, 128)
-      : undefined;
+    tagQuery?.trim().toLocaleLowerCase().slice(0, 128);
   const conditions = [
     eq(
       assets.reviewStatus,

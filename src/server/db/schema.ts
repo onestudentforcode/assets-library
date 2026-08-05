@@ -71,6 +71,7 @@ export const videoSceneBatches = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
     completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
   },
   (table) => [index("scene_batches_status_created_idx").on(table.processingStatus, table.createdAt)],
 );

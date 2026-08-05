@@ -151,6 +151,7 @@ export type DescriptionSearch = z.infer<typeof descriptionSearchSchema>;
 
 export interface AssetSummary {
   id: string;
+  entryType: "asset" | "failed_scene_batch";
   name: string;
   description: string;
   mediaType: MediaType;
@@ -159,6 +160,8 @@ export interface AssetSummary {
   tags: AssetTag[];
   mediaUrl: string;
   sourceOriginalFilename: string | null;
+  failureCode: FailureCode | null;
+  failureMessage: string | null;
   createdAt: string;
   searchScore?: number;
   semanticScore?: number;
@@ -169,8 +172,6 @@ export interface AssetDetail extends AssetSummary {
   mimeType: string;
   sizeBytes: number;
   directPublish: boolean;
-  failureCode: FailureCode | null;
-  failureMessage: string | null;
   analysis: AnalysisResult | null;
   updatedAt: string;
 }

@@ -39,6 +39,14 @@ export function initializeDatabase(
     connection.sqlite.exec(
       "CREATE INDEX IF NOT EXISTS assets_source_batch_idx ON assets(source_batch_id)",
     );
+    const sceneBatchColumns = connection.sqlite
+      .prepare("PRAGMA table_info(video_scene_batches)")
+      .all() as Array<{ name: string }>;
+    if (!sceneBatchColumns.some((column) => column.name === "deleted_at")) {
+      connection.sqlite.exec(
+        "ALTER TABLE video_scene_batches ADD COLUMN deleted_at integer",
+      );
+    }
     return connection;
   } catch (error) {
     connection.sqlite.close();

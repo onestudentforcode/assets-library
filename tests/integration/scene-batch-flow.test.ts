@@ -128,6 +128,7 @@ describe("video scene batch flow", () => {
 
   it("fails before every download and creates zero children when metadata exceeds by one byte", async () => {
     const repository = await import("@/server/repositories/scene-batches");
+    const assetRepository = await import("@/server/repositories/assets");
     const database = await import("@/server/db");
     const schema = await import("@/server/db/schema");
     const batches = await import("@/server/services/scene-batch-processing");
@@ -149,6 +150,15 @@ describe("video scene batch flow", () => {
     expect(repository.getVideoSceneBatchRecord(batchId)).toMatchObject({
       originalPath: null,
       externalTaskId: null,
+    });
+    const failedOverviewItem = (await assetRepository.listAssets({ view: "pending" }))
+      .items.find((item) => item.id === batchId);
+    expect(failedOverviewItem).toMatchObject({
+      entryType: "failed_scene_batch",
+      processingStatus: "failed",
+      reviewStatus: "pending_review",
+      sourceOriginalFilename: "campaign-oversized.mp4",
+      failureCode: "file_too_large",
     });
 
     const storedJob = database.db
@@ -172,6 +182,15 @@ describe("video scene batch flow", () => {
         .where(eq(schema.videoSceneBatchJobs.id, storedJob.id))
         .get()?.status,
     ).toBe("failed");
+    repository.dismissFailedSceneBatch(batchId);
+    expect(
+      (await assetRepository.listAssets({ view: "pending" })).items.some(
+        (item) => item.id === batchId,
+      ),
+    ).toBe(false);
+    expect(() => repository.getVideoSceneBatchStatus(batchId)).toThrow(
+      /不存在/,
+    );
   });
 
   it("rolls back every child when one analysis fails", async () => {
