@@ -223,6 +223,11 @@ function GalleryCard({
           <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{asset.reviewStatus === "published" ? "已入库" : "待审核"}</span>
         </div>
         <AssetStatus asset={asset} />
+        {asset.sourceOriginalFilename && (
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+            来源：{asset.sourceOriginalFilename}
+          </p>
+        )}
         <AssetTags asset={asset} />
         {showDiagnostics && <Diagnostics asset={asset} />}
       </CardContent>
@@ -265,6 +270,11 @@ function ListRow({
           <span className="hidden shrink-0 text-xs text-slate-400 dark:text-slate-500 sm:inline">{asset.mediaType === "image" ? "图片" : "视频"}</span>
         </div>
         <p className="line-clamp-1 text-sm text-slate-500 dark:text-slate-400">{asset.description || "暂无描述"}</p>
+        {asset.sourceOriginalFilename && (
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+            来源：{asset.sourceOriginalFilename}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><AssetStatus asset={asset} /><AssetTags asset={asset} /></div>
         {showDiagnostics && <Diagnostics asset={asset} />}
       </div>

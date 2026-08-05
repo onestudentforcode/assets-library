@@ -15,7 +15,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { UploadStatus } from "@/shared/contracts";
+import type {
+  UploadStatus,
+  VideoSceneBatchStatus,
+} from "@/shared/contracts";
 
 interface ApiError {
   error?: { message?: string };
@@ -34,7 +37,7 @@ interface UploadItem {
   previewUrl: string;
   phase: UploadPhase;
   progress: number;
-  status: UploadStatus | null;
+  status: UploadStatus | VideoSceneBatchStatus | null;
   error: string;
 }
 
@@ -107,7 +110,7 @@ export function UploadForm() {
     );
   };
 
-  const poll = async (itemId: string, uploadId: string) => {
+  const poll = async (itemId: string, uploadId: string, sceneBatch: boolean) => {
     if (!mountedRef.current) return;
     const controller = new AbortController();
     pollControllersRef.current.set(itemId, controller);
@@ -124,10 +127,15 @@ export function UploadForm() {
           }, 1_000);
           controller.signal.addEventListener("abort", onAbort, { once: true });
         });
-        const response = await fetch(`/api/uploads/${uploadId}`, {
+        const response = await fetch(
+          sceneBatch
+            ? `/api/uploads/video-scenes/${uploadId}`
+            : `/api/uploads/${uploadId}`,
+          {
           cache: "no-store",
           signal: controller.signal,
-        });
+          },
+        );
         if (!mountedRef.current) return;
         if (!response.ok) {
           let message = `无法获取处理状态（HTTP ${response.status}），请前往素材概览查看。`;
@@ -143,7 +151,9 @@ export function UploadForm() {
           });
           return;
         }
-        const status = (await response.json()) as UploadStatus;
+        const status = (await response.json()) as
+          | UploadStatus
+          | VideoSceneBatchStatus;
         if (!mountedRef.current) return;
         if (status.processingStatus === "completed") {
           updateItem(itemId, {
@@ -196,7 +206,8 @@ export function UploadForm() {
     updateItem(item.id, { phase: "uploading", progress: 0, error: "" });
     await new Promise<void>((resolve) => {
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", isVideo(item.file) ? "/api/uploads/videos" : "/api/uploads/images");
+      const sceneBatch = isVideo(item.file);
+      xhr.open("POST", sceneBatch ? "/api/uploads/video-scenes" : "/api/uploads/images");
       xhr.upload.onprogress = (event) => {
         if (mountedRef.current && event.lengthComputable) {
           updateItem(item.id, {
@@ -216,10 +227,12 @@ export function UploadForm() {
           resolve();
           return;
         }
-        let payload: (UploadStatus & ApiError) | null = null;
+        let payload: ((UploadStatus | VideoSceneBatchStatus) & ApiError) | null = null;
         try {
-          payload = JSON.parse(xhr.responseText || "{}") as UploadStatus &
-            ApiError;
+          payload = JSON.parse(xhr.responseText || "{}") as (
+            | UploadStatus
+            | VideoSceneBatchStatus
+          ) & ApiError;
         } catch {
           // The fallback below handles a non-JSON server response.
         }
@@ -236,7 +249,7 @@ export function UploadForm() {
           phase: "processing",
           progress: payload.progressPercent,
         });
-        void poll(item.id, payload.uploadId);
+        void poll(item.id, payload.uploadId, sceneBatch);
         resolve();
       };
       xhr.send(body);
@@ -425,13 +438,26 @@ export function UploadForm() {
                           {item.error}
                         </p>
                       )}
-                      {item.status && (
+                      {item.status && "assetId" in item.status && (
                         <Link
                           href={`/assets/${item.status.assetId}`}
                           className="mt-2 inline-flex text-xs font-medium text-cyan-700 hover:underline"
                         >
                           查看素材详情
                         </Link>
+                      )}
+                      {item.status && "childAssets" in item.status && item.status.childAssets.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                          {item.status.childAssets.map((child, index) => (
+                            <Link
+                              key={child.assetId}
+                              href={`/assets/${child.assetId}`}
+                              className="font-medium text-cyan-700 hover:underline"
+                            >
+                              分镜 {index + 1}
+                            </Link>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </li>

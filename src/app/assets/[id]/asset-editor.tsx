@@ -167,6 +167,11 @@ export function AssetEditor({ initialAsset }: { initialAsset: AssetDetail }) {
           <p className="mt-2 text-sm text-slate-500">
             {asset.originalFilename} · {(asset.sizeBytes / 1024 / 1024).toFixed(1)} MB
           </p>
+          {asset.sourceOriginalFilename && (
+            <p className="mt-1 text-sm text-slate-500">
+              来源原视频：{asset.sourceOriginalFilename}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {asset.processingStatus === "failed" && (
