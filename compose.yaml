@@ -19,6 +19,30 @@ services:
   worker:
     <<: *app
     command: pnpm start:worker
+    depends_on:
+      scene-detect:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scene-detect:
+    build:
+      context: .
+      dockerfile: Dockerfile.scene-detect
+      network: host
+      args:
+        SCENE_DETECT_COMMIT: 4f29ad7141bf63c04576ecd6734578680b5968ad
+    network_mode: host
+    environment:
+      WORKSPACE_ROOT: /workspace
+      MAX_UPLOAD_BYTES: 209715200
+    volumes:
+      - assets-library-scene-workspace:/workspace
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:28200/health', timeout=5)); assert data['status'] == 'ok'"]
+      interval: 10s
+      timeout: 6s
+      retries: 6
+      start_period: 10s
     restart: unless-stopped
 
   chroma:
@@ -35,3 +59,4 @@ volumes:
   assets-library-data:
   assets-library-media:
   assets-library-chroma:
+  assets-library-scene-workspace:

@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.12-slim-bookworm
+
+ARG SCENE_DETECT_REPOSITORY=https://github.com/YiHarvest/scene-detect-service.git
+ARG SCENE_DETECT_COMMIT=4f29ad7141bf63c04576ecd6734578680b5968ad
+ARG DEBIAN_MIRROR=http://mirrors.aliyun.com/debian
+ARG DEBIAN_SECURITY_MIRROR=http://mirrors.aliyun.com/debian-security
+
+LABEL org.opencontainers.image.source="https://github.com/YiHarvest/scene-detect-service"
+LABEL org.opencontainers.image.revision="${SCENE_DETECT_COMMIT}"
+
+RUN sed -i \
+      -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+      -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+      /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates ffmpeg git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /service
+
+# Fetch exactly the reviewed commit. The Python service source remains in its
+# upstream repository and is not copied into the TypeScript application.
+RUN git init \
+    && git remote add origin "$SCENE_DETECT_REPOSITORY" \
+    && git fetch --depth 1 origin "$SCENE_DETECT_COMMIT" \
+    && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "$SCENE_DETECT_COMMIT" \
+    && rm -rf .git \
+    && pip install --no-cache-dir --timeout 600 --retries 5 .
+
+ENV WORKSPACE_ROOT=/workspace
+ENV MAX_UPLOAD_BYTES=209715200
+
+RUN mkdir -p /workspace
+
+EXPOSE 28200
+
+CMD ["python", "main.py", "--host", "127.0.0.1", "--port", "28200"]
