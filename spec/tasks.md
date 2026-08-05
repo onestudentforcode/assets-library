@@ -96,3 +96,4 @@
 - [x] T062 覆盖大小边界、零解析门禁、服务异常、整批回滚、直接入库原子性、恢复幂等和旧接口兼容测试
 - [x] T063 同步环境变量、Compose、README、API 文档、OpenAPI 和快速验证说明，并记录 Scene Detection Service 源码最小改动原则
 - [x] T064 通过 lint、typecheck、test、e2e、build 和分镜服务健康检查
+- [x] T065 将失败分镜批次合并到待入库概览，展示失败原因并提供软删除操作，同时保证零子素材和 worker 终态隔离

@@ -80,6 +80,10 @@ curl -X POST http://localhost:3000/api/uploads/video-scenes \
 
 查询分镜批次及可见子素材。批次尚未通过完整大小门禁时 `childAssets` 为空；通过后所有子素材一次出现。任一子素材分析失败时整批回滚，列表重新为空。批次完成前，不能对子素材单独发布、重试或删除。
 
+### `DELETE /api/uploads/video-scenes/{uploadId}`
+
+删除待入库列表中的失败分镜批次。仅允许删除已经进入 `failed` 的批次；成功返回 `204 No Content`。删除后该失败项不再显示，批次任务保持终止状态，不会被 worker 重新处理。
+
 ## 上传状态
 
 ### `GET /api/uploads/{uploadId}`

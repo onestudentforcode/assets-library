@@ -94,6 +94,16 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/VideoSceneBatchStatus" }
         "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [视频上传]
+      summary: 删除待入库列表中的失败分镜批次
+      description: 仅允许删除 processingStatus 为 failed 的批次；批次软删除后不再出现在待入库列表，也不会被 worker 重新处理。
+      parameters:
+        - { name: uploadId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: 失败批次已删除 }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/uploads/{uploadId}:
     get:
       tags: [上传状态]
@@ -110,6 +120,7 @@ paths:
     get:
       tags: [素材管理]
       summary: 分页查询未删除的素材及其处理、审核状态
+      description: pending 视图同时包含未软删除的失败分镜批次概览项；此类条目的 entryType 为 failed_scene_batch。
       parameters:
         - { name: view, in: query, description: pending 返回待审核素材，published 返回已入库素材, schema: { type: string, enum: [pending, published], default: published } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -266,9 +277,10 @@ components:
           items: { $ref: "#/components/schemas/UploadStatus" }
     AssetSummary:
       type: object
-      required: [id, name, description, mediaType, processingStatus, reviewStatus, tags, mediaUrl, sourceOriginalFilename, createdAt]
+      required: [id, entryType, name, description, mediaType, processingStatus, reviewStatus, tags, mediaUrl, sourceOriginalFilename, failureCode, failureMessage, createdAt]
       properties:
         id: { type: string, format: uuid }
+        entryType: { type: string, enum: [asset, failed_scene_batch] }
         name: { type: string }
         description: { type: string }
         mediaType: { type: string, enum: [image, video] }
@@ -277,22 +289,22 @@ components:
         tags: { type: array, items: { type: object } }
         mediaUrl: { type: string }
         sourceOriginalFilename: { type: [string, "null"] }
+        failureCode:
+          anyOf:
+            - { $ref: "#/components/schemas/FailureCode" }
+            - { type: "null" }
+        failureMessage: { type: [string, "null"] }
         createdAt: { type: string, format: date-time }
     AssetDetail:
       allOf:
         - { $ref: "#/components/schemas/AssetSummary" }
         - type: object
-          required: [originalFilename, mimeType, sizeBytes, directPublish, failureCode, failureMessage, analysis, updatedAt]
+          required: [originalFilename, mimeType, sizeBytes, directPublish, analysis, updatedAt]
           properties:
             originalFilename: { type: string }
             mimeType: { type: string }
             sizeBytes: { type: integer, minimum: 1 }
             directPublish: { type: boolean }
-            failureCode:
-              anyOf:
-                - { $ref: "#/components/schemas/FailureCode" }
-                - { type: "null" }
-            failureMessage: { type: [string, "null"] }
             analysis: { type: [object, "null"] }
             updatedAt: { type: string, format: date-time }
     AssetPage:
