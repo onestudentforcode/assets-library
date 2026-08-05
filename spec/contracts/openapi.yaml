@@ -26,6 +26,7 @@ paths:
   /api/uploads/videos:
     post:
       summary: 上传 H.264 MP4 视频并异步校验、提取关键帧
+      description: 兼容的单素材视频上传接口；素材库上传页默认使用 /api/uploads/video-scenes。
       requestBody:
         required: true
         content:
@@ -43,6 +44,39 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/UploadStatus" }
         "400": { $ref: "#/components/responses/Error" }
+  /api/uploads/video-scenes:
+    post:
+      summary: 上传原视频并异步切分为独立分镜素材
+      description: 上传页默认使用此接口。原视频完成分镜切分和全量大小校验后，每个分镜进入原有视频解析链路。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                directPublish: { type: boolean }
+      responses:
+        "202":
+          description: 来源批次已接收，等待后台切分和解析
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VideoSceneBatchStatus" }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/uploads/video-scenes/{uploadId}:
+    get:
+      summary: 查询视频分镜批次及子素材状态
+      parameters:
+        - { name: uploadId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: 当前批次状态和已创建的子素材
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VideoSceneBatchStatus" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/uploads/{uploadId}:
     get:
       summary: 查询上传与处理状态
@@ -65,6 +99,9 @@ paths:
       responses:
         "200":
           description: 带分页信息的素材列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssetPage" }
   /api/search:
     post:
       summary: 按描述语义检索已入库素材
@@ -85,7 +122,11 @@ paths:
     get:
       summary: 获取素材完整详情与分析结果
       responses:
-        "200": { description: 素材详情 }
+        "200":
+          description: 素材详情
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssetDetail" }
         "404": { $ref: "#/components/responses/Error" }
     patch:
       summary: 整体更新素材名称、描述和标签
@@ -155,8 +196,12 @@ components:
         - video_frames_missing
         - model_request_failed
         - model_response_invalid
+        - scene_split_failed
         - storage_error
         - internal_error
+    SceneBatchProcessingStatus:
+      type: string
+      enum: [queued, splitting, validating_segments, analyzing, completed, failed]
     UploadStatus:
       type: object
       required: [uploadId, assetId, mediaType, processingStatus, reviewStatus, progressPercent, failureCode, failureMessage]
@@ -172,6 +217,69 @@ components:
             - { $ref: "#/components/schemas/FailureCode" }
             - { type: "null" }
         failureMessage: { type: [string, "null"] }
+    VideoSceneBatchStatus:
+      type: object
+      required: [uploadId, originalFilename, processingStatus, progressPercent, sceneCount, failureCode, failureMessage, childAssets]
+      properties:
+        uploadId: { type: string, format: uuid }
+        originalFilename: { type: string }
+        processingStatus: { $ref: "#/components/schemas/SceneBatchProcessingStatus" }
+        progressPercent: { type: integer, minimum: 0, maximum: 100 }
+        sceneCount:
+          anyOf:
+            - { type: integer, minimum: 1 }
+            - { type: "null" }
+        failureCode:
+          anyOf:
+            - { $ref: "#/components/schemas/FailureCode" }
+            - { type: "null" }
+        failureMessage: { type: [string, "null"] }
+        childAssets:
+          type: array
+          description: 完整分镜清单通过 7 MiB 校验后一次性出现；整批回滚完成后为空。
+          items: { $ref: "#/components/schemas/UploadStatus" }
+    AssetSummary:
+      type: object
+      required: [id, name, description, mediaType, processingStatus, reviewStatus, tags, mediaUrl, sourceOriginalFilename, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        mediaType: { type: string, enum: [image, video] }
+        processingStatus: { type: string, enum: [queued, validating, analyzing, completed, failed] }
+        reviewStatus: { type: string, enum: [pending_review, published, deleted] }
+        tags: { type: array, items: { type: object } }
+        mediaUrl: { type: string }
+        sourceOriginalFilename: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+    AssetDetail:
+      allOf:
+        - { $ref: "#/components/schemas/AssetSummary" }
+        - type: object
+          required: [originalFilename, mimeType, sizeBytes, directPublish, failureCode, failureMessage, analysis, updatedAt]
+          properties:
+            originalFilename: { type: string }
+            mimeType: { type: string }
+            sizeBytes: { type: integer, minimum: 1 }
+            directPublish: { type: boolean }
+            failureCode:
+              anyOf:
+                - { $ref: "#/components/schemas/FailureCode" }
+                - { type: "null" }
+            failureMessage: { type: [string, "null"] }
+            analysis: { type: [object, "null"] }
+            updatedAt: { type: string, format: date-time }
+    AssetPage:
+      type: object
+      required: [items, page, pageSize, total, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AssetSummary" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 50 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 1 }
     AssetEdit:
       type: object
       required: [name, description, tags]
